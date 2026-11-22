@@ -1,0 +1,2334 @@
+import 'dart:async';
+import 'dart:convert';
+import 'dart:math';
+import 'dart:typed_data';
+
+import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
+
+import 'lobby_images.dart';
+
+const Color bg = Color(0xFF170D25);
+const Color panel = Color(0xFF2B173B);
+const Color gold = Color(0xFFFFC542);
+
+void main() {
+  WidgetsFlutterBinding.ensureInitialized();
+  SystemChrome.setPreferredOrientations([
+    DeviceOrientation.landscapeLeft,
+    DeviceOrientation.landscapeRight,
+  ]);
+  SystemChrome.setEnabledSystemUIMode(SystemUiMode.immersiveSticky);
+  runApp(const PokerTableApp());
+}
+
+class PokerTableApp extends StatelessWidget {
+  const PokerTableApp({super.key});
+
+  @override
+  Widget build(BuildContext context) {
+    return MaterialApp(
+      debugShowCheckedModeBanner: false,
+      title: 'طرابيزة بوكر',
+      theme: ThemeData(
+        brightness: Brightness.dark,
+        scaffoldBackgroundColor: bg,
+        fontFamily: 'Arial',
+      ),
+      // التخطيط مرسوم بصريًا كما في التصميم، والنصوص العربية تُعرض بشكل صحيح
+      home: const Directionality(
+        textDirection: TextDirection.ltr,
+        child: LobbyPage(),
+      ),
+    );
+  }
+}
+
+void _soon(BuildContext context, String what) {
+  ScaffoldMessenger.of(context).showSnackBar(
+    SnackBar(content: Text('$what قريبًا'), duration: const Duration(seconds: 1)),
+  );
+}
+
+
+void _openGame(BuildContext context, String name) {
+  if (name == 'بوكر' || name == 'أوماها') {
+    Navigator.of(context).push(
+      MaterialPageRoute(
+        builder: (_) => PokerTablePage(
+          title: name == 'بوكر' ? 'تكساس هولدم' : 'أوماها بوكر',
+          omaha: name == 'أوماها',
+        ),
+      ),
+    );
+  } else {
+    _soon(context, 'لعبة $name');
+  }
+}
+
+class LobbyPage extends StatelessWidget {
+  const LobbyPage({super.key});
+
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      body: Container(
+        decoration: const BoxDecoration(
+          gradient: RadialGradient(
+            center: Alignment(0, -0.5),
+            radius: 1.3,
+            colors: [Color(0xFF4A1E6B), Color(0xFF1A0B2A), Color(0xFF0B0514)],
+            stops: [0.0, 0.6, 1.0],
+          ),
+        ),
+        child: Stack(children: [
+          const Positioned.fill(
+            child: AssetOr('assets/images/bg.jpg',
+                fit: BoxFit.cover, fallback: SizedBox.shrink()),
+          ),
+          SafeArea(
+          child: LayoutBuilder(builder: (context, c) {
+            final portrait = c.maxWidth < c.maxHeight;
+            return Column(
+              children: [
+                _TopBar(),
+                Expanded(
+                  child: Padding(
+                    padding: const EdgeInsets.symmetric(horizontal: 10),
+                    child: portrait ? _portraitBody() : _landscapeBody(),
+                  ),
+                ),
+                _BottomBar(),
+              ],
+            );
+          }),
+        ),
+        ]),
+      ),
+    );
+  }
+
+  Widget _landscapeBody() => Row(
+        children: [
+          Expanded(flex: 22, child: _LeftPanel()),
+          const SizedBox(width: 10),
+          const Expanded(flex: 56, child: _GamesArea(columns: 3)),
+          const SizedBox(width: 10),
+          Expanded(flex: 16, child: _RewardCard()),
+        ],
+      );
+
+  Widget _portraitBody() => Column(
+        children: [
+          const SizedBox(height: 6),
+          const Expanded(child: _GamesArea(columns: 2)),
+          const SizedBox(height: 8),
+          _RewardBanner(),
+          const SizedBox(height: 4),
+        ],
+      );
+}
+
+class _RewardBanner extends StatelessWidget {
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+      decoration: BoxDecoration(
+        gradient: const LinearGradient(
+          colors: [Color(0xFF3A1A55), Color(0xFF1C0D2C)],
+        ),
+        borderRadius: BorderRadius.circular(14),
+        border: Border.all(color: gold, width: 1.5),
+      ),
+      child: Row(
+        children: [
+          const SizedBox(width: 44, height: 38, child: AssetOr('assets/images/chest.png', fallback: FittedBox(child: _CoinPile()))),
+          const SizedBox(width: 8),
+          const Expanded(
+            child: Text('مكافأة مجانية كل يوم',
+                style: TextStyle(
+                    color: gold, fontWeight: FontWeight.w900, fontSize: 14)),
+          ),
+          ElevatedButton(
+            style: ElevatedButton.styleFrom(
+              backgroundColor: const Color(0xFF1FA24F),
+              foregroundColor: Colors.white,
+              shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(20)),
+            ),
+            onPressed: () => _soon(context, 'المكافأة اليومية'),
+            child: const Text('🎁 احصل عليها',
+                style: TextStyle(fontWeight: FontWeight.bold)),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+// ---------------- الشريط العلوي ----------------
+class _TopBar extends StatelessWidget {
+  @override
+  Widget build(BuildContext context) {
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(10, 6, 10, 4),
+      child: Row(
+        children: [
+          // الملف الشخصي
+          Container(
+            padding: const EdgeInsets.fromLTRB(6, 4, 14, 4),
+            decoration: BoxDecoration(
+              color: panel,
+              borderRadius: BorderRadius.circular(30),
+              border: Border.all(color: gold.withValues(alpha: .5)),
+            ),
+            child: const Row(
+              children: [
+                CircleAvatar(
+                  radius: 18,
+                  backgroundColor: Color(0xFF54266F),
+                  child: Text('😎', style: TextStyle(fontSize: 20)),
+                ),
+                SizedBox(width: 8),
+                Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Text('حسن',
+                        style: TextStyle(
+                            fontWeight: FontWeight.bold, fontSize: 13)),
+                    Text('ID: 1025487',
+                        style: TextStyle(color: Colors.white60, fontSize: 10)),
+                  ],
+                ),
+              ],
+            ),
+          ),
+          const SizedBox(width: 10),
+          // العملات
+          Container(
+            padding: const EdgeInsets.fromLTRB(10, 4, 4, 4),
+            decoration: BoxDecoration(
+              color: panel,
+              borderRadius: BorderRadius.circular(30),
+              border: Border.all(color: gold.withValues(alpha: .5)),
+            ),
+            child: Row(
+              children: [
+                const Text('🪙', style: TextStyle(fontSize: 20)),
+                const SizedBox(width: 6),
+                const Text('1,740,756',
+                    style:
+                        TextStyle(fontWeight: FontWeight.bold, fontSize: 15)),
+                const SizedBox(width: 8),
+                GestureDetector(
+                  onTap: () => _soon(context, 'إضافة عملات'),
+                  child: const CircleAvatar(
+                    radius: 12,
+                    backgroundColor: Color(0xFF1FA24F),
+                    child: Icon(Icons.add, size: 18, color: Colors.white),
+                  ),
+                ),
+              ],
+            ),
+          ),
+          const Spacer(),
+          _TopIcon(emoji: '🎁', label: 'المهام', badge: 3),
+          _TopIcon(emoji: '🏆', label: 'الأحداث'),
+          _TopIcon(emoji: '📅', label: 'مكافآت يومية'),
+          _TopIcon(emoji: '⚙️', label: 'الإعدادات'),
+        ],
+      ),
+    );
+  }
+}
+
+class _TopIcon extends StatelessWidget {
+  const _TopIcon({required this.emoji, required this.label, this.badge});
+  final String emoji;
+  final String label;
+  final int? badge;
+
+  @override
+  Widget build(BuildContext context) {
+    return InkWell(
+      onTap: () => _soon(context, label),
+      child: Padding(
+        padding: const EdgeInsets.symmetric(horizontal: 8),
+        child: Stack(
+          clipBehavior: Clip.none,
+          children: [
+            Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Text(emoji, style: const TextStyle(fontSize: 24)),
+                Text(label,
+                    style: const TextStyle(
+                        fontSize: 10, fontWeight: FontWeight.bold)),
+              ],
+            ),
+            if (badge != null)
+              Positioned(
+                right: -4,
+                top: -4,
+                child: _Badge(count: badge!),
+              ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+class _Badge extends StatelessWidget {
+  const _Badge({required this.count});
+  final int count;
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      width: 16,
+      height: 16,
+      alignment: Alignment.center,
+      decoration: const BoxDecoration(color: Color(0xFFE53935), shape: BoxShape.circle),
+      child: Text('$count',
+          style: const TextStyle(fontSize: 10, fontWeight: FontWeight.bold)),
+    );
+  }
+}
+
+// ---------------- اللوحة اليسرى ----------------
+class _LeftPanel extends StatelessWidget {
+  @override
+  Widget build(BuildContext context) {
+    return Column(
+      children: [
+        // مكان صورة الشخصية (استبدلها بصورتك الخاصة)
+        Expanded(
+          child: Container(
+            width: double.infinity,
+            decoration: BoxDecoration(
+              gradient: const LinearGradient(
+                colors: [Color(0x3354266F), Color(0x00000000)],
+                begin: Alignment.bottomCenter,
+                end: Alignment.topCenter,
+              ),
+              borderRadius: BorderRadius.circular(16),
+            ),
+            alignment: Alignment.center,
+            child: const AssetOr('assets/images/character.png', fallback: FittedBox(child: _GameArt('poker'))),
+          ),
+        ),
+        const SizedBox(height: 6),
+        _ActionPill(
+          emoji: '🛒',
+          title: 'المتجر',
+          subtitle: 'اشحن عملاتك الافتراضية',
+          onTap: () => _soon(context, 'المتجر'),
+        ),
+      ],
+    );
+  }
+}
+
+class _ActionPill extends StatelessWidget {
+  const _ActionPill({
+    required this.emoji,
+    required this.title,
+    required this.subtitle,
+    required this.onTap,
+  });
+  final String emoji;
+  final String title;
+  final String subtitle;
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    return Material(
+      color: Colors.transparent,
+      child: InkWell(
+        borderRadius: BorderRadius.circular(14),
+        onTap: onTap,
+        child: Ink(
+          padding: const EdgeInsets.all(8),
+          decoration: BoxDecoration(
+            color: panel,
+            borderRadius: BorderRadius.circular(14),
+            border: Border.all(color: gold.withValues(alpha: .6)),
+          ),
+          child: Row(
+            children: [
+              Text(emoji, style: const TextStyle(fontSize: 26)),
+              const SizedBox(width: 8),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(title,
+                        style: const TextStyle(
+                            color: gold,
+                            fontWeight: FontWeight.bold,
+                            fontSize: 13)),
+                    Text(subtitle,
+                        style: const TextStyle(
+                            color: Colors.white70, fontSize: 10)),
+                  ],
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+// ---------------- منطقة الألعاب ----------------
+class _GamesArea extends StatelessWidget {
+  const _GamesArea({this.columns = 3});
+  final int columns;
+
+  static const games = [
+    ['بوكر', 'poker', '1254', 0xFF17634E, 0xFF0E3B34],
+    ['الدومينو', 'domino', '893', 0xFF1E7A3E, 0xFF0F4A2A],
+    ['أوماها', 'omaha', '567', 0xFF1E7A3E, 0xFF0F4A2A],
+    ['تين باتي', 'tin', '742', 0xFF1B6C7A, 0xFF0D3345],
+    ['أقل أو أعلى من 7', 'dice', '621', 0xFF6C287E, 0xFF29133D],
+    ['ألعاب ورق متنوعة', 'misc', '438', 0xFF1F4E9A, 0xFF11264F],
+  ];
+
+  @override
+  Widget build(BuildContext context) {
+    final rows = games.length ~/ columns;
+    return Column(
+      children: [
+        const Padding(
+          padding: EdgeInsets.only(bottom: 6),
+          child: _Logo(),
+        ),
+        for (int r = 0; r < rows; r++) ...[
+          Expanded(child: _row(context, r * columns)),
+          if (r != rows - 1) const SizedBox(height: 8),
+        ],
+      ],
+    );
+  }
+
+  Widget _row(BuildContext context, int start) {
+    return Row(
+      children: [
+        for (int i = start; i < start + columns; i++) ...[
+          Expanded(
+            child: _GameCard(
+              name: games[i][0] as String,
+              kind: games[i][1] as String,
+              players: games[i][2] as String,
+              c1: Color(games[i][3] as int),
+              c2: Color(games[i][4] as int),
+              onTap: () => _openGame(context, games[i][0] as String),
+            ),
+          ),
+          if (i != start + columns - 1) const SizedBox(width: 8),
+        ],
+      ],
+    );
+  }
+}
+
+class _Logo extends StatelessWidget {
+  const _Logo();
+
+  @override
+  Widget build(BuildContext context) {
+    if (AssetOr.has('logo')) {
+      return const SizedBox(
+        height: 58,
+        child: AssetOr('assets/images/logo.webp', fallback: SizedBox()),
+      );
+    }
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 26, vertical: 5),
+      decoration: BoxDecoration(
+        gradient: const LinearGradient(
+          colors: [Color(0xFFD42B38), Color(0xFF7A1019)],
+          begin: Alignment.topCenter,
+          end: Alignment.bottomCenter,
+        ),
+        borderRadius: BorderRadius.circular(14),
+        border: Border.all(color: gold, width: 2.5),
+        boxShadow: [
+          BoxShadow(color: gold.withValues(alpha: .4), blurRadius: 16),
+        ],
+      ),
+      child: const Text(
+        '👑 طرابيزة بوكر',
+        style: TextStyle(
+          color: Colors.white,
+          fontSize: 20,
+          fontWeight: FontWeight.w900,
+          shadows: [Shadow(color: Colors.black87, blurRadius: 4, offset: Offset(0, 2))],
+        ),
+      ),
+    );
+  }
+}
+
+class _GameCard extends StatelessWidget {
+  const _GameCard({
+    required this.name,
+    required this.kind,
+    required this.players,
+    required this.c1,
+    required this.c2,
+    required this.onTap,
+  });
+  final String name;
+  final String kind;
+  final String players;
+  final Color c1;
+  final Color c2;
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    if (AssetOr.has('game_$kind')) {
+      return FittedBox(
+        fit: BoxFit.contain,
+        child: SizedBox(
+          width: 176,
+          height: 160,
+          child: Stack(
+            fit: StackFit.expand,
+            children: [
+              AssetOr('assets/images/game_$kind.webp',
+                  fit: BoxFit.fill, fallback: const SizedBox()),
+              Positioned.fill(
+                child: Material(
+                  color: Colors.transparent,
+                  child: InkWell(
+                    borderRadius: BorderRadius.circular(14),
+                    onTap: onTap,
+                  ),
+                ),
+              ),
+            ],
+          ),
+        ),
+      );
+    }
+    return Material(
+      color: Colors.transparent,
+      child: InkWell(
+        borderRadius: BorderRadius.circular(14),
+        onTap: onTap,
+        child: Ink(
+          decoration: BoxDecoration(
+            gradient: LinearGradient(
+              colors: [c1, c2],
+              begin: Alignment.topCenter,
+              end: Alignment.bottomCenter,
+            ),
+            borderRadius: BorderRadius.circular(14),
+            border: Border.all(color: gold, width: 1.5),
+            boxShadow: [
+              BoxShadow(color: gold.withValues(alpha: .25), blurRadius: 14),
+            ],
+          ),
+          child: ClipRRect(
+            borderRadius: BorderRadius.circular(13),
+            child: Stack(
+              fit: StackFit.expand,
+              children: [
+                const DecoratedBox(
+                  decoration: BoxDecoration(
+                    gradient: LinearGradient(
+                      begin: Alignment.topCenter,
+                      end: Alignment.center,
+                      colors: [Color(0x26FFFFFF), Color(0x00FFFFFF)],
+                    ),
+                  ),
+                ),
+                Column(
+                  mainAxisAlignment: MainAxisAlignment.center,
+                  children: [
+                    Expanded(
+                      child: Padding(
+                        padding: const EdgeInsets.fromLTRB(6, 8, 6, 2),
+                        child: AssetOr(
+                          'assets/images/game_$kind.png',
+                          fallback: FittedBox(child: _GameArt(kind)),
+                        ),
+                      ),
+                    ),
+                    Container(
+                      margin: const EdgeInsets.symmetric(horizontal: 8),
+                      padding: const EdgeInsets.symmetric(
+                          horizontal: 10, vertical: 3),
+                      decoration: BoxDecoration(
+                        gradient: const LinearGradient(
+                          colors: [Color(0xFFFFE08A), Color(0xFFD9962B)],
+                          begin: Alignment.topCenter,
+                          end: Alignment.bottomCenter,
+                        ),
+                        borderRadius: BorderRadius.circular(8),
+                        border: Border.all(color: const Color(0xFF8A5A12)),
+                        boxShadow: const [
+                          BoxShadow(color: Colors.black45, blurRadius: 3, offset: Offset(0, 2)),
+                        ],
+                      ),
+                      child: FittedBox(
+                        fit: BoxFit.scaleDown,
+                        child: Text(name,
+                            style: const TextStyle(
+                                color: Color(0xFF3A1F0A),
+                                fontWeight: FontWeight.w900,
+                                fontSize: 14)),
+                      ),
+                    ),
+                    const SizedBox(height: 4),
+                    Container(
+                      margin: const EdgeInsets.only(bottom: 6),
+                      padding: const EdgeInsets.symmetric(
+                          horizontal: 8, vertical: 2),
+                      decoration: BoxDecoration(
+                        color: Colors.black38,
+                        borderRadius: BorderRadius.circular(8),
+                      ),
+                      child: Text('👤 $players لاعب',
+                          style: const TextStyle(
+                              fontSize: 10, color: Colors.white70)),
+                    ),
+                  ],
+                ),
+              ],
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+// ---------------- بطاقة المكافأة ----------------
+class _RewardCard extends StatelessWidget {
+  @override
+  Widget build(BuildContext context) {
+    if (AssetOr.has('reward')) {
+      return GestureDetector(
+        onTap: () => _soon(context, 'المكافأة اليومية'),
+        child: const FittedBox(
+          fit: BoxFit.contain,
+          child: SizedBox(
+            width: 156,
+            height: 328,
+            child: AssetOr('assets/images/reward.webp',
+                fit: BoxFit.fill, fallback: SizedBox()),
+          ),
+        ),
+      );
+    }
+    return Container(
+      padding: const EdgeInsets.all(8),
+      decoration: BoxDecoration(
+        gradient: const LinearGradient(
+          colors: [Color(0xFF3A1A55), Color(0xFF1C0D2C)],
+          begin: Alignment.topCenter,
+          end: Alignment.bottomCenter,
+        ),
+        borderRadius: BorderRadius.circular(16),
+        border: Border.all(color: gold, width: 1.5),
+      ),
+      child: Column(
+        children: [
+          const Text('مكافأة مجانية\nكل يوم',
+              textAlign: TextAlign.center,
+              style: TextStyle(
+                  color: gold, fontWeight: FontWeight.w900, fontSize: 14)),
+          const Expanded(
+            child: Padding(
+              padding: EdgeInsets.all(8),
+              child: AssetOr('assets/images/chest.png',
+                  fallback: FittedBox(child: _CoinPile())),
+            ),
+          ),
+          SizedBox(
+            width: double.infinity,
+            child: ElevatedButton(
+              style: ElevatedButton.styleFrom(
+                backgroundColor: const Color(0xFF1FA24F),
+                foregroundColor: Colors.white,
+                padding: const EdgeInsets.symmetric(vertical: 6),
+                shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(20)),
+              ),
+              onPressed: () => _soon(context, 'المكافأة اليومية'),
+              child: const FittedBox(
+                child: Text('🎁 احصل عليها الآن',
+                    style: TextStyle(fontWeight: FontWeight.bold)),
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+// ---------------- الشريط السفلي ----------------
+class _BottomBar extends StatelessWidget {
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      height: 62,
+      margin: const EdgeInsets.fromLTRB(10, 6, 10, 6),
+      decoration: BoxDecoration(
+        color: panel,
+        borderRadius: BorderRadius.circular(22),
+        border: Border.all(color: gold.withValues(alpha: .6)),
+      ),
+      child: Row(
+        children: [
+          Expanded(child: _NavItem(emoji: '💬', label: 'الدردشة')),
+          Expanded(child: _NavItem(emoji: '👥', label: 'الأصدقاء', badge: 5)),
+          Expanded(
+            flex: 2,
+            child: Padding(
+              padding: const EdgeInsets.symmetric(vertical: 6),
+              child: DecoratedBox(
+                decoration: BoxDecoration(
+                  gradient: const LinearGradient(
+                    colors: [Color(0xFFFFE590), Color(0xFFE0A22B)],
+                    begin: Alignment.topCenter,
+                    end: Alignment.bottomCenter,
+                  ),
+                  borderRadius: BorderRadius.circular(28),
+                  boxShadow: [
+                    BoxShadow(color: gold.withValues(alpha: .5), blurRadius: 16),
+                  ],
+                ),
+                child: ElevatedButton(
+                  style: ElevatedButton.styleFrom(
+                    backgroundColor: Colors.transparent,
+                    shadowColor: Colors.transparent,
+                    foregroundColor: const Color(0xFF3A1F0A),
+                    shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(28)),
+                  ),
+                  onPressed: () => _openGame(context, 'بوكر'),
+                  child: const FittedBox(
+                    child: Text('▶  العب الآن',
+                        style: TextStyle(
+                            fontSize: 20, fontWeight: FontWeight.w900)),
+                  ),
+                ),
+              ),
+            ),
+          ),
+          Expanded(child: _NavItem(emoji: '📊', label: 'الترتيب')),
+          Expanded(child: _NavItem(emoji: '🏪', label: 'المتجر', badge: 2)),
+        ],
+      ),
+    );
+  }
+}
+
+class _NavItem extends StatelessWidget {
+  const _NavItem({required this.emoji, required this.label, this.badge});
+  final String emoji;
+  final String label;
+  final int? badge;
+
+  @override
+  Widget build(BuildContext context) {
+    return InkWell(
+      onTap: () => _soon(context, label),
+      child: Stack(
+        alignment: Alignment.center,
+        children: [
+          Column(
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: [
+              Text(emoji, style: const TextStyle(fontSize: 22)),
+              Text(label,
+                  style: const TextStyle(
+                      color: gold, fontSize: 11, fontWeight: FontWeight.bold)),
+            ],
+          ),
+          if (badge != null)
+            Positioned(top: 4, right: 18, child: _Badge(count: badge!)),
+        ],
+      ),
+    );
+  }
+}
+
+
+// ======================================================================
+//                    محرك اللعبة (أوراق + تقييم + رهانات)
+// ======================================================================
+
+const List<String> kSuits = ['♠', '♥', '♦', '♣'];
+const List<String> kHandNames = [
+  'ورقة عالية',
+  'زوج',
+  'زوجان',
+  'ثلاثية',
+  'ستريت',
+  'فلاش',
+  'فل هاوس',
+  'رباعية',
+  'ستريت فلاش',
+];
+
+class PCard {
+  const PCard(this.rank, this.suit);
+  final int rank; // 2..14 (14 = A)
+  final int suit; // 0..3
+  String get rankLabel {
+    switch (rank) {
+      case 14:
+        return 'A';
+      case 13:
+        return 'K';
+      case 12:
+        return 'Q';
+      case 11:
+        return 'J';
+      default:
+        return '$rank';
+    }
+  }
+
+  String get suitLabel => kSuits[suit];
+  bool get red => suit == 1 || suit == 2;
+}
+
+List<PCard> newDeck(Random r) {
+  final d = <PCard>[
+    for (int s = 0; s < 4; s++)
+      for (int k = 2; k <= 14; k++) PCard(k, s),
+  ];
+  d.shuffle(r);
+  return d;
+}
+
+/// تقييم 5 أوراق: رقم أكبر = يد أقوى. الفئة = score ~/ 759375
+int eval5(List<PCard> c) {
+  final ranks = c.map((e) => e.rank).toList()..sort((a, b) => b.compareTo(a));
+  final flush = c.every((e) => e.suit == c[0].suit);
+  final counts = <int, int>{};
+  for (final r in ranks) {
+    counts[r] = (counts[r] ?? 0) + 1;
+  }
+  final groups = counts.entries.toList()
+    ..sort((a, b) {
+      final x = b.value.compareTo(a.value);
+      return x != 0 ? x : b.key.compareTo(a.key);
+    });
+  final ordered = groups.map((e) => e.key).toList();
+  final shape = groups.map((e) => e.value).toList();
+
+  int straightHigh = 0;
+  if (counts.length == 5) {
+    if (ranks[0] - ranks[4] == 4) {
+      straightHigh = ranks[0];
+    } else if (ranks[0] == 14 && ranks[1] == 5 && ranks[4] == 2) {
+      straightHigh = 5; // A-2-3-4-5
+    }
+  }
+
+  int cat;
+  List<int> tb;
+  if (straightHigh > 0 && flush) {
+    cat = 8;
+    tb = [straightHigh];
+  } else if (shape[0] == 4) {
+    cat = 7;
+    tb = ordered;
+  } else if (shape[0] == 3 && shape[1] == 2) {
+    cat = 6;
+    tb = ordered;
+  } else if (flush) {
+    cat = 5;
+    tb = ranks;
+  } else if (straightHigh > 0) {
+    cat = 4;
+    tb = [straightHigh];
+  } else if (shape[0] == 3) {
+    cat = 3;
+    tb = ordered;
+  } else if (shape[0] == 2 && shape[1] == 2) {
+    cat = 2;
+    tb = ordered;
+  } else if (shape[0] == 2) {
+    cat = 1;
+    tb = ordered;
+  } else {
+    cat = 0;
+    tb = ranks;
+  }
+  int score = cat;
+  for (int i = 0; i < 5; i++) {
+    score = score * 15 + (i < tb.length ? tb[i] : 0);
+  }
+  return score;
+}
+
+int catOf(int score) => score ~/ 759375; // 15^5
+
+/// أفضل يد ممكنة.
+/// أوماها: ورقتان بالضبط من يدك + ثلاث من الطاولة.
+/// هولدم: أفضل 5 من 7.
+int bestScore(List<PCard> hole, List<PCard> board, bool omaha) {
+  if (board.length < 3) return -1;
+  int best = -1;
+  if (omaha) {
+    for (int a = 0; a < hole.length; a++) {
+      for (int b = a + 1; b < hole.length; b++) {
+        for (int i = 0; i < board.length; i++) {
+          for (int j = i + 1; j < board.length; j++) {
+            for (int k = j + 1; k < board.length; k++) {
+              final s = eval5([hole[a], hole[b], board[i], board[j], board[k]]);
+              if (s > best) best = s;
+            }
+          }
+        }
+      }
+    }
+  } else {
+    final c = [...hole, ...board];
+    final n = c.length;
+    for (int a = 0; a < n; a++) {
+      for (int b = a + 1; b < n; b++) {
+        for (int d = b + 1; d < n; d++) {
+          for (int e = d + 1; e < n; e++) {
+            for (int f = e + 1; f < n; f++) {
+              final s = eval5([c[a], c[b], c[d], c[e], c[f]]);
+              if (s > best) best = s;
+            }
+          }
+        }
+      }
+    }
+  }
+  return best;
+}
+
+class Player {
+  Player(this.name, this.emoji, {this.isHero = false});
+  final String name;
+  final String emoji;
+  final bool isHero;
+  int chips = 1000000;
+  int bet = 0; // رهان الجولة الحالية
+  int totalIn = 0; // مجموع ما دفعه في اليد
+  bool folded = false;
+  bool allIn = false;
+  List<PCard> hole = [];
+  String lastAction = '';
+}
+
+enum Act { fold, checkCall, raise }
+
+class PlayerMove {
+  const PlayerMove(this.act, [this.raiseTo = 0]);
+  final Act act;
+  final int raiseTo;
+}
+
+class GameController extends ChangeNotifier {
+  GameController({required this.omaha});
+
+  final bool omaha;
+  final Random _rnd = Random();
+
+  final List<Player> players = [
+    Player('حسن', '😎', isHero: true),
+    Player('منى', '👱‍♀️'),
+    Player('عمر', '🧑🏿'),
+    Player('سارة', '👩'),
+    Player('ليلى', '👩‍🦰'),
+    Player('ريم', '👩🏽'),
+  ];
+
+  static const int smallBlind = 10000;
+  static const int bigBlind = 20000;
+  static const int startChips = 1000000; // عملات افتراضية فقط
+
+  List<PCard> board = [];
+  List<PCard> _deck = [];
+  int pot = 0;
+  int currentBet = 0;
+  int minRaise = bigBlind;
+  int dealer = -1;
+  int actor = -1;
+  bool handOver = true;
+  bool reveal = false;
+  String message = '';
+  Set<int> winners = {};
+
+  Completer<PlayerMove>? _heroWait;
+  bool _gone = false;
+
+  Player get hero => players[0];
+  bool get heroTurn => _heroWait != null && !_heroWait!.isCompleted;
+  int get heroToCall => max(0, currentBet - hero.bet);
+  int get heroMaxTo => hero.chips + hero.bet;
+  bool get heroCanRaise => heroMaxTo > currentBet;
+  int get minRaiseTo => min(currentBet + minRaise, heroMaxTo);
+
+  @override
+  void notifyListeners() {
+    if (!_gone) super.notifyListeners();
+  }
+
+  @override
+  void dispose() {
+    _gone = true;
+    final c = _heroWait;
+    if (c != null && !c.isCompleted) c.complete(const PlayerMove(Act.fold));
+    super.dispose();
+  }
+
+  Future<void> _delay(int ms) => Future.delayed(Duration(milliseconds: ms));
+
+  int _alive() => players.where((p) => !p.folded).length;
+
+  void _put(Player p, int amount) {
+    final a = min(amount, p.chips);
+    p.chips -= a;
+    p.bet += a;
+    p.totalIn += a;
+    pot += a;
+    if (p.chips == 0) p.allIn = true;
+  }
+
+  // ---------------- بدء يد جديدة ----------------
+  Future<void> startHand() async {
+    if (!handOver) return;
+    final n = players.length;
+    handOver = false;
+    reveal = false;
+    message = '';
+    winners = {};
+    board = [];
+    pot = 0;
+    for (final p in players) {
+      if (p.chips < bigBlind) p.chips = startChips; // إعادة تعبئة افتراضية
+      p.bet = 0;
+      p.totalIn = 0;
+      p.folded = false;
+      p.allIn = false;
+      p.hole = [];
+      p.lastAction = '';
+    }
+    dealer = (dealer + 1) % n;
+    _deck = newDeck(_rnd);
+    final holeCount = omaha ? 4 : 2;
+    for (final p in players) {
+      p.hole = [for (int i = 0; i < holeCount; i++) _deck.removeLast()];
+    }
+    final sb = (dealer + 1) % n;
+    final bb = (dealer + 2) % n;
+    _put(players[sb], smallBlind);
+    players[sb].lastAction = 'SB';
+    _put(players[bb], bigBlind);
+    players[bb].lastAction = 'BB';
+    currentBet = bigBlind;
+    minRaise = bigBlind;
+    notifyListeners();
+    await _runHand();
+  }
+
+  Future<void> _runHand() async {
+    final n = players.length;
+    for (int s = 0; s < 4; s++) {
+      if (s > 0) {
+        for (final p in players) {
+          p.bet = 0;
+          if (!p.folded && !p.allIn) p.lastAction = '';
+        }
+        currentBet = 0;
+        minRaise = bigBlind;
+        final k = s == 1 ? 3 : 1;
+        for (int i = 0; i < k; i++) {
+          board.add(_deck.removeLast());
+        }
+        notifyListeners();
+        await _delay(600);
+        if (_gone) return;
+      }
+      if (_alive() == 1) break;
+      final start = s == 0 ? (dealer + 3) % n : (dealer + 1) % n;
+      await _bettingRound(start);
+      if (_gone) return;
+      if (_alive() == 1) break;
+    }
+    await _finish();
+  }
+
+  // ---------------- جولة رهان ----------------
+  Future<void> _bettingRound(int start) async {
+    final n = players.length;
+    final acted = <int>{};
+    int raises = 0;
+    int i = start;
+    while (true) {
+      if (_gone || _alive() == 1) return;
+      final live = <int>[
+        for (int k = 0; k < n; k++)
+          if (!players[k].folded && !players[k].allIn) k,
+      ];
+      final pending = live
+          .where((k) => !acted.contains(k) || players[k].bet < currentBet)
+          .toList();
+      if (pending.isEmpty) return;
+      if (live.length == 1 && players[live[0]].bet >= currentBet) return;
+
+      final p = players[i];
+      if (p.folded || p.allIn || (acted.contains(i) && p.bet >= currentBet)) {
+        i = (i + 1) % n;
+        continue;
+      }
+
+      actor = i;
+      notifyListeners();
+      final toCall = currentBet - p.bet;
+      PlayerMove m;
+      if (p.isHero) {
+        m = await _askHero();
+      } else {
+        await _delay(hero.folded ? 250 : 800 + _rnd.nextInt(500));
+        m = _botMove(p, toCall, raises);
+      }
+      if (_gone) return;
+
+      bool raised = false;
+      if (m.act == Act.fold) {
+        p.folded = true;
+        p.lastAction = 'Fold';
+      } else {
+        final maxTo = p.chips + p.bet;
+        final to = min(max(m.raiseTo, currentBet + minRaise), maxTo);
+        if (m.act == Act.raise && to > currentBet) {
+          _put(p, to - p.bet);
+          final size = p.bet - currentBet;
+          if (size >= minRaise) minRaise = size;
+          currentBet = p.bet;
+          raised = true;
+          p.lastAction = p.allIn ? 'All-in' : 'Raise';
+        } else {
+          _put(p, toCall);
+          p.lastAction =
+              toCall <= 0 ? 'Check' : (p.allIn ? 'All-in' : 'Call');
+        }
+      }
+      acted.add(i);
+      if (raised) {
+        raises++;
+        acted
+          ..clear()
+          ..add(i);
+      }
+      i = (i + 1) % n;
+    }
+  }
+
+  Future<PlayerMove> _askHero() {
+    _heroWait = Completer<PlayerMove>();
+    notifyListeners();
+    return _heroWait!.future;
+  }
+
+  /// يُستدعى من الأزرار
+  void heroAct(Act a, [int raiseTo = 0]) {
+    final c = _heroWait;
+    if (c == null || c.isCompleted) return;
+    _heroWait = null;
+    c.complete(PlayerMove(a, raiseTo));
+    notifyListeners();
+  }
+
+  // ---------------- ذكاء البوتات ----------------
+  double _strength(Player p) {
+    if (board.length < 3) {
+      double s = 0.15;
+      final cnt = <int, int>{};
+      for (final c in p.hole) {
+        cnt[c.rank] = (cnt[c.rank] ?? 0) + 1;
+      }
+      for (final e in cnt.entries) {
+        if (e.value >= 2) s += e.key >= 10 ? 0.2 : 0.1;
+      }
+      s += p.hole.where((c) => c.rank >= 11).length * 0.07;
+      final suits = <int, int>{};
+      for (final c in p.hole) {
+        suits[c.suit] = (suits[c.suit] ?? 0) + 1;
+      }
+      if (suits.values.any((v) => v >= 2)) s += 0.08;
+      return (s + _rnd.nextDouble() * 0.15).clamp(0.0, 1.0).toDouble();
+    }
+    const t = [0.15, 0.3, 0.5, 0.65, 0.8, 0.85, 0.92, 0.97, 1.0];
+    final cat = catOf(bestScore(p.hole, board, omaha));
+    return (t[cat] + _rnd.nextDouble() * 0.1).clamp(0.0, 1.0).toDouble();
+  }
+
+  PlayerMove _botMove(Player p, int toCall, int raises) {
+    final s = _strength(p);
+    int raiseSize() => currentBet + minRaise * (1 + _rnd.nextInt(3));
+    if (toCall <= 0) {
+      if (s > 0.7 && raises < 3 && _rnd.nextDouble() < 0.6) {
+        return PlayerMove(Act.raise, raiseSize());
+      }
+      return const PlayerMove(Act.checkCall);
+    }
+    final odds = toCall / (pot + toCall);
+    final limit = toCall <= bigBlind ? 0.2 : odds + 0.15;
+    if (s < limit && _rnd.nextDouble() < 0.85) {
+      return const PlayerMove(Act.fold);
+    }
+    if (s > 0.75 && raises < 3 && _rnd.nextDouble() < 0.5) {
+      return PlayerMove(Act.raise, raiseSize());
+    }
+    return const PlayerMove(Act.checkCall);
+  }
+
+  // ---------------- نهاية اليد وتوزيع الجوائز ----------------
+  Future<void> _finish() async {
+    final n = players.length;
+    actor = -1;
+    final contenders = <int>[
+      for (int k = 0; k < n; k++)
+        if (!players[k].folded) k,
+    ];
+    final showdown = contenders.length > 1;
+    while (showdown && board.length < 5) {
+      board.add(_deck.removeLast());
+    }
+    final scores = <int, int>{
+      for (final k in contenders)
+        k: showdown ? bestScore(players[k].hole, board, omaha) : 0,
+    };
+
+    // توزيع الرصيد الرئيسي والجانبي
+    final won = List<int>.filled(n, 0);
+    final levels = players.map((p) => p.totalIn).where((t) => t > 0).toSet().toList()
+      ..sort();
+    int prev = 0;
+    for (final lvl in levels) {
+      int slice = 0;
+      for (final p in players) {
+        slice += max(0, min(p.totalIn, lvl) - prev);
+      }
+      prev = lvl;
+      var elig = contenders.where((k) => players[k].totalIn >= lvl).toList();
+      if (elig.isEmpty) elig = contenders;
+      int top = -1;
+      for (final k in elig) {
+        top = max(top, scores[k] ?? 0);
+      }
+      final w = elig.where((k) => (scores[k] ?? 0) == top).toList();
+      final share = slice ~/ w.length;
+      for (final k in w) {
+        won[k] += share;
+      }
+      won[w.first] += slice - share * w.length;
+    }
+    for (int k = 0; k < n; k++) {
+      players[k].chips += won[k];
+    }
+
+    // رسالة الفوز
+    int topScore = -1;
+    for (final k in contenders) {
+      topScore = max(topScore, scores[k] ?? 0);
+    }
+    final main =
+        contenders.where((k) => (scores[k] ?? 0) == topScore).toList();
+    final names = main.map((k) => players[k].name).join(' و ');
+    final amount = main.fold<int>(0, (a, k) => a + won[k]);
+    message = showdown
+        ? '$names فاز بـ ${_fmt(amount)} • ${kHandNames[catOf(topScore)]}'
+        : '$names فاز بـ ${_fmt(amount)} (انسحب الجميع)';
+    winners = {
+      for (int k = 0; k < n; k++)
+        if (won[k] > 0) k,
+    };
+    pot = 0;
+    reveal = showdown;
+    handOver = true;
+    notifyListeners();
+  }
+}
+
+// ======================================================================
+//                              شاشة الطاولة
+// ======================================================================
+
+class PokerTablePage extends StatefulWidget {
+  const PokerTablePage({
+    super.key,
+    this.title = 'تكساس هولدم',
+    this.omaha = false,
+  });
+  final String title;
+  final bool omaha;
+
+  @override
+  State<PokerTablePage> createState() => _PokerTablePageState();
+}
+
+class _PokerTablePageState extends State<PokerTablePage> {
+  late final GameController game;
+
+  @override
+  void initState() {
+    super.initState();
+    game = GameController(omaha: widget.omaha);
+    unawaited(game.startHand());
+  }
+
+  @override
+  void dispose() {
+    game.dispose();
+    super.dispose();
+  }
+
+  Future<void> _openRaise() async {
+    final minTo = game.minRaiseTo;
+    final maxTo = game.heroMaxTo;
+    if (minTo >= maxTo) {
+      game.heroAct(Act.raise, maxTo); // الكل
+      return;
+    }
+    double v = minTo.toDouble();
+    final res = await showModalBottomSheet<int>(
+      context: context,
+      backgroundColor: panel,
+      builder: (ctx) => StatefulBuilder(
+        builder: (ctx, setSheet) => Directionality(
+          textDirection: TextDirection.ltr,
+          child: Padding(
+            padding: const EdgeInsets.all(14),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Text('Raise إلى ${_fmt(v.round())}',
+                    style: const TextStyle(
+                        color: gold, fontSize: 18, fontWeight: FontWeight.bold)),
+                Slider(
+                  min: minTo.toDouble(),
+                  max: maxTo.toDouble(),
+                  value: v,
+                  activeColor: gold,
+                  onChanged: (x) => setSheet(() => v = x),
+                ),
+                Row(
+                  mainAxisAlignment: MainAxisAlignment.spaceEvenly,
+                  children: [
+                    TextButton(
+                        onPressed: () => setSheet(() => v = minTo.toDouble()),
+                        child: const Text('الأدنى')),
+                    TextButton(
+                        onPressed: () => setSheet(() => v =
+                            (game.currentBet + game.pot)
+                                .clamp(minTo, maxTo)
+                                .toDouble()),
+                        child: const Text('Pot')),
+                    TextButton(
+                        onPressed: () => setSheet(() => v = maxTo.toDouble()),
+                        child: const Text('الكل')),
+                  ],
+                ),
+                ElevatedButton(
+                  style: ElevatedButton.styleFrom(
+                    backgroundColor: const Color(0xFF168C55),
+                    foregroundColor: Colors.white,
+                  ),
+                  onPressed: () => Navigator.pop(ctx, v.round()),
+                  child: const Text('تأكيد'),
+                ),
+              ],
+            ),
+          ),
+        ),
+      ),
+    );
+    if (res != null) game.heroAct(Act.raise, res);
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Directionality(
+      textDirection: TextDirection.ltr,
+      child: Scaffold(
+        body: SafeArea(
+          child: AnimatedBuilder(
+            animation: game,
+            builder: (context, _) => Column(
+              children: [
+                _Header(
+                    title: widget.title,
+                    onBack: () {
+                      if (Navigator.of(context).canPop()) {
+                        Navigator.of(context).pop();
+                      }
+                    }),
+                Expanded(
+                  child: DecoratedBox(
+                    decoration: const BoxDecoration(
+                      gradient: RadialGradient(
+                        radius: 1.0,
+                        colors: [Color(0xFF3A1A55), Color(0xFF120A1E)],
+                      ),
+                    ),
+                    child: _tableArea(game),
+                  ),
+                ),
+                _ActionBar(
+                  game: game,
+                  onRaise: _openRaise,
+                  onNext: () => unawaited(game.startHand()),
+                ),
+              ],
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _tableArea(GameController g) {
+    return LayoutBuilder(builder: (context, c) {
+      final w = c.maxWidth;
+      final h = c.maxHeight;
+      final pl = g.players;
+      final portrait = w < h;
+      final cardW = min(34.0, w * .12);
+
+      Widget seat(int i) => PlayerSeat(
+            player: pl[i],
+            active: g.actor == i,
+            dealer: g.dealer == i,
+            reveal: g.reveal,
+            winner: g.handOver && g.winners.contains(i),
+          );
+
+      String? heroHand;
+      if (!g.hero.folded && g.board.length >= 3) {
+        final s = bestScore(g.hero.hole, g.board, g.omaha);
+        if (s >= 0) heroHand = kHandNames[catOf(s)];
+      }
+
+      return Stack(
+        children: [
+          Positioned(
+            left: w * (portrait ? .1 : .13),
+            right: w * (portrait ? .1 : .13),
+            top: h * (portrait ? .1 : .17),
+            bottom: h * (portrait ? .12 : .13),
+            child: Container(
+              decoration: BoxDecoration(
+                gradient: const RadialGradient(
+                  colors: [Color(0xFF1C7A5A), Color(0xFF0B4234)],
+                ),
+                borderRadius: BorderRadius.circular(portrait ? w : h),
+                border: Border.all(color: const Color(0xFF6D5A3A), width: 7),
+                boxShadow: const [
+                  BoxShadow(color: Colors.black54, blurRadius: 18),
+                ],
+              ),
+              child: Container(
+                margin: const EdgeInsets.all(14),
+                decoration: BoxDecoration(
+                  borderRadius: BorderRadius.circular(portrait ? w : h),
+                  border: Border.all(color: Colors.white12, width: 2),
+                ),
+              ),
+            ),
+          ),
+          Align(
+            alignment: const Alignment(0, -0.1),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                _PotChip(amount: g.pot),
+                const SizedBox(height: 4),
+                SizedBox(
+                  height: cardW * 1.4,
+                  child: Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      for (final card in g.board) ...[
+                        PlayingCard(card: card, width: cardW),
+                        const SizedBox(width: 3),
+                      ],
+                    ],
+                  ),
+                ),
+                if (heroHand != null)
+                  Container(
+                    margin: const EdgeInsets.only(top: 3),
+                    padding:
+                        const EdgeInsets.symmetric(horizontal: 8, vertical: 1),
+                    decoration: BoxDecoration(
+                      color: Colors.black54,
+                      borderRadius: BorderRadius.circular(8),
+                    ),
+                    child: Text(heroHand,
+                        style: const TextStyle(
+                            fontSize: 11, fontWeight: FontWeight.bold)),
+                  ),
+              ],
+            ),
+          ),
+          Align(
+              alignment: portrait
+                  ? const Alignment(-1, 0.5)
+                  : const Alignment(-0.98, 0.05),
+              child: seat(1)),
+          Align(
+              alignment: portrait
+                  ? const Alignment(-1, -0.3)
+                  : const Alignment(-0.55, -0.98),
+              child: seat(2)),
+          Align(alignment: const Alignment(0, -1), child: seat(3)),
+          Align(
+              alignment: portrait
+                  ? const Alignment(1, -0.3)
+                  : const Alignment(0.55, -0.98),
+              child: seat(4)),
+          Align(
+              alignment: portrait
+                  ? const Alignment(1, 0.5)
+                  : const Alignment(0.98, 0.05),
+              child: seat(5)),
+          Align(
+            alignment: const Alignment(0, 1),
+            child: _HeroSeat(
+              player: pl[0],
+              active: g.actor == 0,
+              dealer: g.dealer == 0,
+              winner: g.handOver && g.winners.contains(0),
+            ),
+          ),
+        ],
+      );
+    });
+  }
+}
+
+// ---------------- الواجهة العلوية ----------------
+class _Header extends StatelessWidget {
+  const _Header({required this.title, required this.onBack});
+  final String title;
+  final VoidCallback onBack;
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      height: 40,
+      padding: const EdgeInsets.symmetric(horizontal: 8),
+      decoration: const BoxDecoration(
+        gradient:
+            LinearGradient(colors: [Color(0xFF8E1B22), Color(0xFF5E1017)]),
+      ),
+      child: Row(
+        children: [
+          GestureDetector(
+            behavior: HitTestBehavior.opaque,
+            onTap: onBack,
+            child: const SizedBox(
+              width: 56,
+              height: 40,
+              child: Icon(Icons.arrow_back, color: gold),
+            ),
+          ),
+          Expanded(
+            child: Text(title,
+                textAlign: TextAlign.center,
+                style: const TextStyle(
+                    fontSize: 20,
+                    fontWeight: FontWeight.w900,
+                    color: Colors.white)),
+          ),
+          const SizedBox(width: 48),
+        ],
+      ),
+    );
+  }
+}
+
+// ---------------- مقاعد اللاعبين ----------------
+class _DealerBadge extends StatelessWidget {
+  const _DealerBadge();
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      width: 16,
+      height: 16,
+      alignment: Alignment.center,
+      decoration: const BoxDecoration(color: Colors.white, shape: BoxShape.circle),
+      child: const Text('D',
+          style: TextStyle(
+              color: Colors.black, fontSize: 10, fontWeight: FontWeight.w900)),
+    );
+  }
+}
+
+class PlayerSeat extends StatelessWidget {
+  const PlayerSeat({
+    super.key,
+    required this.player,
+    required this.active,
+    required this.dealer,
+    required this.reveal,
+    required this.winner,
+  });
+  final Player player;
+  final bool active;
+  final bool dealer;
+  final bool reveal;
+  final bool winner;
+
+  @override
+  Widget build(BuildContext context) {
+    final p = player;
+    final border = winner
+        ? const Color(0xFF7ED957)
+        : (active ? gold : Colors.white24);
+    return Opacity(
+      opacity: p.folded ? .45 : 1,
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          SizedBox(
+            height: 14,
+            child: Text(p.lastAction,
+                style: const TextStyle(
+                    color: gold, fontSize: 11, fontWeight: FontWeight.bold)),
+          ),
+          Stack(
+            clipBehavior: Clip.none,
+            children: [
+              Container(
+                padding: const EdgeInsets.all(2),
+                decoration: BoxDecoration(
+                  shape: BoxShape.circle,
+                  border: Border.all(color: border, width: 3),
+                ),
+                child: CircleAvatar(
+                  radius: 16,
+                  backgroundColor: const Color(0xFF54266F),
+                  child: Text(p.emoji, style: const TextStyle(fontSize: 18)),
+                ),
+              ),
+              if (dealer)
+                const Positioned(right: -6, bottom: -2, child: _DealerBadge()),
+            ],
+          ),
+          Container(
+            margin: const EdgeInsets.only(top: 2),
+            padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 1),
+            decoration: BoxDecoration(
+              color: Colors.black54,
+              borderRadius: BorderRadius.circular(8),
+            ),
+            child: Text('${p.name} • ${_fmt(p.chips)}',
+                style: const TextStyle(fontSize: 10)),
+          ),
+          SizedBox(
+            height: 13,
+            child: p.bet > 0
+                ? Text('🪙 ${_fmt(p.bet)}',
+                    style: const TextStyle(fontSize: 10, color: gold))
+                : null,
+          ),
+          if (!p.folded && p.hole.isNotEmpty)
+            reveal
+                ? Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      for (final c in p.hole)
+                        Padding(
+                          padding: const EdgeInsets.only(right: 1),
+                          child: PlayingCard(card: c, width: 16),
+                        ),
+                    ],
+                  )
+                : const Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      CardBack(width: 14),
+                      SizedBox(width: 2),
+                      CardBack(width: 14),
+                    ],
+                  ),
+        ],
+      ),
+    );
+  }
+}
+
+class _HeroSeat extends StatelessWidget {
+  const _HeroSeat({
+    required this.player,
+    required this.active,
+    required this.dealer,
+    required this.winner,
+  });
+  final Player player;
+  final bool active;
+  final bool dealer;
+  final bool winner;
+
+  @override
+  Widget build(BuildContext context) {
+    final p = player;
+    final border = winner
+        ? const Color(0xFF7ED957)
+        : (active ? gold : const Color(0xFF7ED957).withValues(alpha: .5));
+    return Opacity(
+      opacity: p.folded ? .5 : 1,
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        crossAxisAlignment: CrossAxisAlignment.end,
+        children: [
+          Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              SizedBox(
+                height: 14,
+                child: Text(p.lastAction,
+                    style: const TextStyle(
+                        color: gold,
+                        fontSize: 11,
+                        fontWeight: FontWeight.bold)),
+              ),
+              Stack(
+                clipBehavior: Clip.none,
+                children: [
+                  Container(
+                    padding: const EdgeInsets.all(2),
+                    decoration: BoxDecoration(
+                      shape: BoxShape.circle,
+                      border: Border.all(color: border, width: 3),
+                    ),
+                    child: CircleAvatar(
+                      radius: 16,
+                      backgroundColor: const Color(0xFF54266F),
+                      child: Text(p.emoji, style: const TextStyle(fontSize: 18)),
+                    ),
+                  ),
+                  if (dealer)
+                    const Positioned(
+                        right: -6, bottom: -2, child: _DealerBadge()),
+                ],
+              ),
+              Container(
+                margin: const EdgeInsets.only(top: 2),
+                padding:
+                    const EdgeInsets.symmetric(horizontal: 6, vertical: 1),
+                decoration: BoxDecoration(
+                  color: Colors.black54,
+                  borderRadius: BorderRadius.circular(8),
+                ),
+                child: Text('${p.name} • ${_fmt(p.chips)}',
+                    style: const TextStyle(fontSize: 10)),
+              ),
+              SizedBox(
+                height: 13,
+                child: p.bet > 0
+                    ? Text('🪙 ${_fmt(p.bet)}',
+                        style: const TextStyle(fontSize: 10, color: gold))
+                    : null,
+              ),
+            ],
+          ),
+          const SizedBox(width: 8),
+          Padding(
+            padding: const EdgeInsets.only(bottom: 14),
+            child: Row(
+              children: [
+                for (final c in p.hole) ...[
+                  PlayingCard(card: c, width: 34),
+                  const SizedBox(width: 2),
+                ],
+              ],
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+// ---------------- الأوراق ----------------
+class PlayingCard extends StatelessWidget {
+  const PlayingCard({super.key, required this.card, this.width = 40});
+  final PCard card;
+  final double width;
+
+  @override
+  Widget build(BuildContext context) {
+    return _MiniCard(card.rankLabel, card.suitLabel, size: width);
+  }
+}
+
+class CardBack extends StatelessWidget {
+  const CardBack({super.key, this.width = 22});
+  final double width;
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      width: width,
+      height: width * 1.4,
+      padding: EdgeInsets.all(width * .14),
+      decoration: BoxDecoration(
+        gradient: const LinearGradient(
+          colors: [Color(0xFFD32F2F), Color(0xFF8E1B22)],
+          begin: Alignment.topLeft,
+          end: Alignment.bottomRight,
+        ),
+        borderRadius: BorderRadius.circular(width * .14),
+        border: Border.all(color: Colors.white, width: 1.5),
+        boxShadow: const [
+          BoxShadow(color: Colors.black54, blurRadius: 3, offset: Offset(0, 2)),
+        ],
+      ),
+      child: DecoratedBox(
+        decoration: BoxDecoration(
+          border: Border.all(color: Colors.white54, width: 1),
+          borderRadius: BorderRadius.circular(2),
+        ),
+      ),
+    );
+  }
+}
+
+class _PotChip extends StatelessWidget {
+  const _PotChip({required this.amount});
+  final int amount;
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 2),
+      decoration: BoxDecoration(
+        color: Colors.black54,
+        borderRadius: BorderRadius.circular(12),
+      ),
+      child: Text('Pot 🪙 ${_fmt(amount)}',
+          style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 12)),
+    );
+  }
+}
+
+// ---------------- أزرار الحركة ----------------
+class _ActionBar extends StatelessWidget {
+  const _ActionBar({
+    required this.game,
+    required this.onRaise,
+    required this.onNext,
+  });
+  final GameController game;
+  final VoidCallback onRaise;
+  final VoidCallback onNext;
+
+  @override
+  Widget build(BuildContext context) {
+    Widget btn(String label, Color color, VoidCallback? onTap) => Expanded(
+          child: Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 6),
+            child: ElevatedButton(
+              style: ElevatedButton.styleFrom(
+                backgroundColor: color,
+                foregroundColor: Colors.white,
+                disabledBackgroundColor: Colors.white12,
+                disabledForegroundColor: Colors.white38,
+                shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(10)),
+              ),
+              onPressed: onTap,
+              child: FittedBox(
+                child: Text(label,
+                    style: const TextStyle(
+                        fontWeight: FontWeight.w900, fontSize: 16)),
+              ),
+            ),
+          ),
+        );
+
+    if (game.handOver) {
+      return Container(
+        height: 52,
+        color: panel,
+        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+        child: Row(
+          children: [
+            Expanded(
+              child: Text(game.message,
+                  textAlign: TextAlign.center,
+                  style: const TextStyle(
+                      color: gold, fontWeight: FontWeight.bold, fontSize: 15)),
+            ),
+            ElevatedButton(
+              style: ElevatedButton.styleFrom(
+                backgroundColor: gold,
+                foregroundColor: const Color(0xFF3A1F0A),
+                shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(20)),
+              ),
+              onPressed: onNext,
+              child: const Text('يد جديدة ▶',
+                  style: TextStyle(fontWeight: FontWeight.w900)),
+            ),
+          ],
+        ),
+      );
+    }
+
+    final turn = game.heroTurn;
+    final toCall = game.heroToCall;
+    final callLabel = toCall <= 0
+        ? 'Check'
+        : 'Call ${_fmt(min(toCall, game.hero.chips))}';
+    return Container(
+      height: 52,
+      color: panel,
+      child: Row(
+        children: [
+          btn('Fold', const Color(0xFF8E1B22),
+              turn ? () => game.heroAct(Act.fold) : null),
+          btn('$callLabel', const Color(0xFF1F4E9A),
+              turn ? () => game.heroAct(Act.checkCall) : null),
+          btn('Raise', const Color(0xFF168C55),
+              turn && game.heroCanRaise ? onRaise : null),
+        ],
+      ),
+    );
+  }
+}
+
+String _fmt(int n) {
+  String t(double v) {
+    var s = v.toStringAsFixed(2);
+    s = s.replaceAll(RegExp(r'0+$'), '');
+    s = s.replaceAll(RegExp(r'\.$'), '');
+    return s;
+  }
+
+  if (n >= 1000000) return '${t(n / 1000000)}M';
+  if (n >= 1000) return '${t(n / 1000)}K';
+  return '$n';
+}
+
+
+// ======================================================================
+//        رسومات مرسومة بالكود (بديل للصور) + دعم الصور الجاهزة
+// ======================================================================
+
+/// يعرض صورة من assets إن وُجدت، وإلا يعرض الرسم البديل.
+class AssetOr extends StatelessWidget {
+  const AssetOr(
+    this.path, {
+    super.key,
+    required this.fallback,
+    this.fit = BoxFit.contain,
+  });
+  final String path;
+  final Widget fallback;
+  final BoxFit fit;
+
+  static final Map<String, Uint8List> _cache = {};
+
+  static bool has(String key) => kLobbyImages.containsKey(key);
+
+  static Uint8List? _bytes(String key) {
+    final b64 = kLobbyImages[key];
+    if (b64 == null) return null;
+    return _cache.putIfAbsent(key, () => base64Decode(b64));
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final key = path.split('/').last.split('.').first;
+    final bytes = _bytes(key);
+    if (bytes != null) {
+      return Image.memory(bytes,
+          fit: fit, gaplessPlayback: true, filterQuality: FilterQuality.medium);
+    }
+    return Image.asset(
+      path,
+      fit: fit,
+      errorBuilder: (_, __, ___) => fallback,
+    );
+  }
+}
+
+class _MiniCard extends StatelessWidget {
+  const _MiniCard(this.rank, this.suit, {this.size = 40});
+  final String rank;
+  final String suit;
+  final double size;
+
+  @override
+  Widget build(BuildContext context) {
+    final red = suit == '♥' || suit == '♦';
+    final color = red ? const Color(0xFFD32F2F) : const Color(0xFF1B1B1B);
+    final h = size * 1.4;
+    return Container(
+      width: size,
+      height: h,
+      decoration: BoxDecoration(
+        gradient: const LinearGradient(
+          colors: [Colors.white, Color(0xFFE6E6E6)],
+          begin: Alignment.topLeft,
+          end: Alignment.bottomRight,
+        ),
+        borderRadius: BorderRadius.circular(size * .12),
+        border: Border.all(color: Colors.black26, width: .8),
+        boxShadow: const [
+          BoxShadow(color: Colors.black54, blurRadius: 4, offset: Offset(0, 2)),
+        ],
+      ),
+      child: Stack(
+        children: [
+          Positioned(
+            left: size * .08,
+            top: h * .03,
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Text(rank,
+                    style: TextStyle(
+                        color: color,
+                        fontSize: size * .34,
+                        fontWeight: FontWeight.w900,
+                        height: 1.05)),
+                Text(suit,
+                    style:
+                        TextStyle(color: color, fontSize: size * .26, height: 1)),
+              ],
+            ),
+          ),
+          Align(
+            alignment: const Alignment(.35, .5),
+            child: Text(suit,
+                style: TextStyle(color: color, fontSize: size * .62, height: 1)),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _PokerChip extends StatelessWidget {
+  const _PokerChip(this.color, {this.size = 24});
+  final Color color;
+  final double size;
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      width: size,
+      height: size,
+      decoration: BoxDecoration(
+        shape: BoxShape.circle,
+        color: color,
+        border: Border.all(color: Colors.white, width: size * .14),
+        boxShadow: const [
+          BoxShadow(color: Colors.black54, blurRadius: 3, offset: Offset(0, 2)),
+        ],
+      ),
+      child: Center(
+        child: Container(
+          width: size * .45,
+          height: size * .45,
+          decoration: BoxDecoration(
+            shape: BoxShape.circle,
+            border: Border.all(color: Colors.white70, width: 1.2),
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+class _Pips extends StatelessWidget {
+  const _Pips(this.n, this.size, this.color);
+  final int n;
+  final double size;
+  final Color color;
+
+  static const Map<int, List<Offset>> _p = {
+    0: [],
+    1: [Offset(.5, .5)],
+    2: [Offset(.28, .28), Offset(.72, .72)],
+    3: [Offset(.25, .25), Offset(.5, .5), Offset(.75, .75)],
+    4: [Offset(.28, .28), Offset(.72, .28), Offset(.28, .72), Offset(.72, .72)],
+    5: [
+      Offset(.28, .28),
+      Offset(.72, .28),
+      Offset(.5, .5),
+      Offset(.28, .72),
+      Offset(.72, .72),
+    ],
+    6: [
+      Offset(.28, .2),
+      Offset(.72, .2),
+      Offset(.28, .5),
+      Offset(.72, .5),
+      Offset(.28, .8),
+      Offset(.72, .8),
+    ],
+  };
+
+  @override
+  Widget build(BuildContext context) {
+    final d = size * .2;
+    return SizedBox(
+      width: size,
+      height: size,
+      child: Stack(
+        children: [
+          for (final o in _p[n] ?? const <Offset>[])
+            Positioned(
+              left: o.dx * size - d / 2,
+              top: o.dy * size - d / 2,
+              child: Container(
+                width: d,
+                height: d,
+                decoration: BoxDecoration(color: color, shape: BoxShape.circle),
+              ),
+            ),
+        ],
+      ),
+    );
+  }
+}
+
+class _Die extends StatelessWidget {
+  const _Die(this.n, this.size);
+  final int n;
+  final double size;
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      width: size,
+      height: size,
+      decoration: BoxDecoration(
+        gradient: const LinearGradient(
+          colors: [Colors.white, Color(0xFFDADADA)],
+          begin: Alignment.topLeft,
+          end: Alignment.bottomRight,
+        ),
+        borderRadius: BorderRadius.circular(size * .2),
+        boxShadow: const [
+          BoxShadow(color: Colors.black54, blurRadius: 5, offset: Offset(0, 3)),
+        ],
+      ),
+      child: _Pips(n, size, const Color(0xFF1B1B1B)),
+    );
+  }
+}
+
+class _DominoTile extends StatelessWidget {
+  const _DominoTile(this.a, this.b, {this.w = 32});
+  final int a;
+  final int b;
+  final double w;
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      width: w,
+      height: w * 2,
+      decoration: BoxDecoration(
+        gradient: const LinearGradient(
+          colors: [Color(0xFFFFF8E1), Color(0xFFE9DDB8)],
+          begin: Alignment.topLeft,
+          end: Alignment.bottomRight,
+        ),
+        borderRadius: BorderRadius.circular(w * .16),
+        border: Border.all(color: Colors.black26),
+        boxShadow: const [
+          BoxShadow(color: Colors.black54, blurRadius: 5, offset: Offset(0, 3)),
+        ],
+      ),
+      child: Column(
+        children: [
+          Expanded(child: Center(child: _Pips(a, w * .8, const Color(0xFF1B1B1B)))),
+          Container(
+            height: 2,
+            margin: EdgeInsets.symmetric(horizontal: w * .1),
+            color: Colors.black45,
+          ),
+          Expanded(child: Center(child: _Pips(b, w * .8, const Color(0xFF1B1B1B)))),
+        ],
+      ),
+    );
+  }
+}
+
+class _Coin extends StatelessWidget {
+  const _Coin(this.size);
+  final double size;
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      width: size,
+      height: size,
+      decoration: BoxDecoration(
+        shape: BoxShape.circle,
+        gradient: const LinearGradient(
+          colors: [Color(0xFFFFE590), Color(0xFFD9962B)],
+          begin: Alignment.topLeft,
+          end: Alignment.bottomRight,
+        ),
+        border: Border.all(color: const Color(0xFF9A6410), width: 2),
+        boxShadow: const [
+          BoxShadow(color: Colors.black54, blurRadius: 3, offset: Offset(0, 2)),
+        ],
+      ),
+      alignment: Alignment.center,
+      child: Text('\$',
+          style: TextStyle(
+              color: const Color(0xFF7A4A08),
+              fontWeight: FontWeight.w900,
+              fontSize: size * .5)),
+    );
+  }
+}
+
+class _CoinPile extends StatelessWidget {
+  const _CoinPile();
+
+  @override
+  Widget build(BuildContext context) {
+    return const SizedBox(
+      width: 90,
+      height: 80,
+      child: Stack(
+        children: [
+          Positioned(left: 0, bottom: 0, child: _Coin(38)),
+          Positioned(left: 30, bottom: 0, child: _Coin(42)),
+          Positioned(right: 0, bottom: 4, child: _Coin(36)),
+          Positioned(left: 16, bottom: 24, child: _Coin(40)),
+          Positioned(left: 46, bottom: 28, child: _Coin(36)),
+        ],
+      ),
+    );
+  }
+}
+
+/// رسمة كل لعبة (120×90) مرسومة بالكود
+class _GameArt extends StatelessWidget {
+  const _GameArt(this.kind);
+  final String kind;
+
+  Widget _fan(List<List<String>> cards, double size, double step) {
+    final n = cards.length;
+    return SizedBox(
+      width: 120,
+      height: 66,
+      child: Stack(
+        alignment: Alignment.bottomCenter,
+        children: [
+          for (int i = 0; i < n; i++)
+            Transform.translate(
+              offset: Offset((i - (n - 1) / 2) * step, 0),
+              child: Transform.rotate(
+                angle: (i - (n - 1) / 2) * 0.26,
+                alignment: Alignment.bottomCenter,
+                child: _MiniCard(cards[i][0], cards[i][1], size: size),
+              ),
+            ),
+        ],
+      ),
+    );
+  }
+
+  Widget _chips() {
+    return const SizedBox(
+      width: 78,
+      height: 26,
+      child: Stack(
+        children: [
+          Positioned(left: 0, child: _PokerChip(Color(0xFFD32F2F))),
+          Positioned(left: 16, child: _PokerChip(Color(0xFF1F4E9A))),
+          Positioned(left: 32, child: _PokerChip(Color(0xFF222222))),
+          Positioned(left: 48, child: _PokerChip(Color(0xFF1FA24F))),
+        ],
+      ),
+    );
+  }
+
+  Widget _cardsWithChips(List<List<String>> cards, double size, double step) {
+    return Stack(
+      children: [
+        Align(alignment: const Alignment(0, -0.6), child: _fan(cards, size, step)),
+        Align(alignment: Alignment.bottomCenter, child: _chips()),
+      ],
+    );
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    Widget child;
+    switch (kind) {
+      case 'poker':
+        child = _cardsWithChips(
+            [['A', '♠'], ['K', '♥'], ['Q', '♠'], ['J', '♦'], ['10', '♠']], 32, 17);
+        break;
+      case 'omaha':
+        child = _cardsWithChips(
+            [['A', '♠'], ['A', '♣'], ['K', '♥'], ['K', '♣']], 34, 22);
+        break;
+      case 'tin':
+        child = _cardsWithChips([['A', '♠'], ['Q', '♥'], ['J', '♦']], 36, 26);
+        break;
+      case 'misc':
+        child = _cardsWithChips(
+            [['Q', '♠'], ['K', '♥'], ['10', '♦'], ['J', '♣']], 34, 22);
+        break;
+      case 'dice':
+        child = Stack(
+          children: [
+            Align(
+              alignment: const Alignment(-0.45, 0),
+              child: Transform.rotate(angle: -0.25, child: const _Die(3, 46)),
+            ),
+            Align(
+              alignment: const Alignment(0.5, 0.1),
+              child: Transform.rotate(angle: 0.3, child: const _Die(4, 46)),
+            ),
+          ],
+        );
+        break;
+      case 'domino':
+        child = Stack(
+          children: [
+            Align(
+              alignment: const Alignment(-0.35, 0),
+              child: Transform.rotate(angle: -0.6, child: const _DominoTile(6, 5)),
+            ),
+            Align(
+              alignment: const Alignment(0.4, 0.1),
+              child: Transform.rotate(angle: 0.7, child: const _DominoTile(3, 4)),
+            ),
+          ],
+        );
+        break;
+      default:
+        child = const SizedBox.shrink();
+    }
+    return SizedBox(width: 120, height: 90, child: child);
+  }
+}
