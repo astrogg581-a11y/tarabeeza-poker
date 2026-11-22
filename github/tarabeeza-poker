@@ -1,0 +1,640 @@
+import 'dart:async';
+import 'dart:convert';
+import 'dart:math';
+import 'dart:typed_data';
+
+import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
+
+import 'lobby_images.dart';
+
+const Color bg = Color(0xFF170D25);
+const Color panel = Color(0xFF2B173B);
+const Color gold = Color(0xFFFFC542);
+
+void main() {
+  WidgetsFlutterBinding.ensureInitialized();
+  SystemChrome.setPreferredOrientations([
+    DeviceOrientation.landscapeLeft,
+    DeviceOrientation.landscapeRight,
+  ]);
+  SystemChrome.setEnabledSystemUIMode(SystemUiMode.immersiveSticky);
+  runApp(const PokerTableApp());
+}
+
+class PokerTableApp extends StatelessWidget {
+  const PokerTableApp({super.key});
+
+  @override
+  Widget build(BuildContext context) {
+    return MaterialApp(
+      debugShowCheckedModeBanner: false,
+      title: 'طرابيزة بوكر',
+      theme: ThemeData(
+        brightness: Brightness.dark,
+        scaffoldBackgroundColor: bg,
+        fontFamily: 'Arial',
+      ),
+      // التخطيط مرسوم بصريًا كما في التصميم، والنصوص العربية تُعرض بشكل صحيح
+      home: const Directionality(
+        textDirection: TextDirection.ltr,
+        child: LobbyPage(),
+      ),
+    );
+  }
+}
+
+void _soon(BuildContext context, String what) {
+  ScaffoldMessenger.of(context).showSnackBar(
+    SnackBar(content: Text('$what قريبًا'), duration: const Duration(seconds: 1)),
+  );
+}
+
+
+void _openGame(BuildContext context, String name) {
+  if (name == 'بوكر' || name == 'أوماها') {
+    Navigator.of(context).push(
+      MaterialPageRoute(
+        builder: (_) => PokerTablePage(
+          title: name == 'بوكر' ? 'تكساس هولدم' : 'أوماها بوكر',
+          omaha: name == 'أوماها',
+        ),
+      ),
+    );
+  } else {
+    _soon(context, 'لعبة $name');
+  }
+}
+
+class LobbyPage extends StatelessWidget {
+  const LobbyPage({super.key});
+
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      body: Container(
+        decoration: const BoxDecoration(
+          gradient: RadialGradient(
+            center: Alignment(0, -0.5),
+            radius: 1.3,
+            colors: [Color(0xFF4A1E6B), Color(0xFF1A0B2A), Color(0xFF0B0514)],
+            stops: [0.0, 0.6, 1.0],
+          ),
+        ),
+        child: Stack(children: [
+          const Positioned.fill(
+            child: AssetOr('assets/images/bg.jpg',
+                fit: BoxFit.cover, fallback: SizedBox.shrink()),
+          ),
+          SafeArea(
+          child: LayoutBuilder(builder: (context, c) {
+            final portrait = c.maxWidth < c.maxHeight;
+            return Column(
+              children: [
+                _TopBar(),
+                Expanded(
+                  child: Padding(
+                    padding: const EdgeInsets.symmetric(horizontal: 10),
+                    child: portrait ? _portraitBody() : _landscapeBody(),
+                  ),
+                ),
+                _BottomBar(),
+              ],
+            );
+          }),
+        ),
+        ]),
+      ),
+    );
+  }
+
+  Widget _landscapeBody() => Row(
+        children: [
+          Expanded(flex: 22, child: _LeftPanel()),
+          const SizedBox(width: 10),
+          const Expanded(flex: 56, child: _GamesArea(columns: 3)),
+          const SizedBox(width: 10),
+          Expanded(flex: 16, child: _RewardCard()),
+        ],
+      );
+
+  Widget _portraitBody() => Column(
+        children: [
+          const SizedBox(height: 6),
+          const Expanded(child: _GamesArea(columns: 2)),
+          const SizedBox(height: 8),
+          _RewardBanner(),
+          const SizedBox(height: 4),
+        ],
+      );
+}
+
+class _RewardBanner extends StatelessWidget {
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+      decoration: BoxDecoration(
+        gradient: const LinearGradient(
+          colors: [Color(0xFF3A1A55), Color(0xFF1C0D2C)],
+        ),
+        borderRadius: BorderRadius.circular(14),
+        border: Border.all(color: gold, width: 1.5),
+      ),
+      child: Row(
+        children: [
+          const SizedBox(width: 44, height: 38, child: AssetOr('assets/images/chest.png', fallback: FittedBox(child: _CoinPile()))),
+          const SizedBox(width: 8),
+          const Expanded(
+            child: Text('مكافأة مجانية كل يوم',
+                style: TextStyle(
+                    color: gold, fontWeight: FontWeight.w900, fontSize: 14)),
+          ),
+          ElevatedButton(
+            style: ElevatedButton.styleFrom(
+              backgroundColor: const Color(0xFF1FA24F),
+              foregroundColor: Colors.white,
+              shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(20)),
+            ),
+            onPressed: () => _soon(context, 'المكافأة اليومية'),
+            child: const Text('🎁 احصل عليها',
+                style: TextStyle(fontWeight: FontWeight.bold)),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+// ---------------- الشريط العلوي ----------------
+class _TopBar extends StatelessWidget {
+  @override
+  Widget build(BuildContext context) {
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(10, 6, 10, 4),
+      child: Row(
+        children: [
+          // الملف الشخصي
+          Container(
+            padding: const EdgeInsets.fromLTRB(6, 4, 14, 4),
+            decoration: BoxDecoration(
+              color: panel,
+              borderRadius: BorderRadius.circular(30),
+              border: Border.all(color: gold.withValues(alpha: .5)),
+            ),
+            child: const Row(
+              children: [
+                CircleAvatar(
+                  radius: 18,
+                  backgroundColor: Color(0xFF54266F),
+                  child: Text('😎', style: TextStyle(fontSize: 20)),
+                ),
+                SizedBox(width: 8),
+                Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Text('حسن',
+                        style: TextStyle(
+                            fontWeight: FontWeight.bold, fontSize: 13)),
+                    Text('ID: 1025487',
+                        style: TextStyle(color: Colors.white60, fontSize: 10)),
+                  ],
+                ),
+              ],
+            ),
+          ),
+          const SizedBox(width: 10),
+          // العملات
+          Container(
+            padding: const EdgeInsets.fromLTRB(10, 4, 4, 4),
+            decoration: BoxDecoration(
+              color: panel,
+              borderRadius: BorderRadius.circular(30),
+              border: Border.all(color: gold.withValues(alpha: .5)),
+            ),
+            child: Row(
+              children: [
+                const Text('🪙', style: TextStyle(fontSize: 20)),
+                const SizedBox(width: 6),
+                const Text('1,740,756',
+                    style:
+                        TextStyle(fontWeight: FontWeight.bold, fontSize: 15)),
+                const SizedBox(width: 8),
+                GestureDetector(
+                  onTap: () => _soon(context, 'إضافة عملات'),
+                  child: const CircleAvatar(
+                    radius: 12,
+                    backgroundColor: Color(0xFF1FA24F),
+                    child: Icon(Icons.add, size: 18, color: Colors.white),
+                  ),
+                ),
+              ],
+            ),
+          ),
+          const Spacer(),
+          _TopIcon(emoji: '🎁', label: 'المهام', badge: 3),
+          _TopIcon(emoji: '🏆', label: 'الأحداث'),
+          _TopIcon(emoji: '📅', label: 'مكافآت يومية'),
+          _TopIcon(emoji: '⚙️', label: 'الإعدادات'),
+        ],
+      ),
+    );
+  }
+}
+
+class _TopIcon extends StatelessWidget {
+  const _TopIcon({required this.emoji, required this.label, this.badge});
+  final String emoji;
+  final String label;
+  final int? badge;
+
+  @override
+  Widget build(BuildContext context) {
+    return InkWell(
+      onTap: () => _soon(context, label),
+      child: Padding(
+        padding: const EdgeInsets.symmetric(horizontal: 8),
+        child: Stack(
+          clipBehavior: Clip.none,
+          children: [
+            Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Text(emoji, style: const TextStyle(fontSize: 24)),
+                Text(label,
+                    style: const TextStyle(
+                        fontSize: 10, fontWeight: FontWeight.bold)),
+              ],
+            ),
+            if (badge != null)
+              Positioned(
+                right: -4,
+                top: -4,
+                child: _Badge(count: badge!),
+              ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+class _Badge extends StatelessWidget {
+  const _Badge({required this.count});
+  final int count;
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      width: 16,
+      height: 16,
+      alignment: Alignment.center,
+      decoration: const BoxDecoration(color: Color(0xFFE53935), shape: BoxShape.circle),
+      child: Text('$count',
+          style: const TextStyle(fontSize: 10, fontWeight: FontWeight.bold)),
+    );
+  }
+}
+
+// ---------------- اللوحة اليسرى ----------------
+class _LeftPanel extends StatelessWidget {
+  @override
+  Widget build(BuildContext context) {
+    return Column(
+      children: [
+        // مكان صورة الشخصية (استبدلها بصورتك الخاصة)
+        Expanded(
+          child: Container(
+            width: double.infinity,
+            decoration: BoxDecoration(
+              gradient: const LinearGradient(
+                colors: [Color(0x3354266F), Color(0x00000000)],
+                begin: Alignment.bottomCenter,
+                end: Alignment.topCenter,
+              ),
+              borderRadius: BorderRadius.circular(16),
+            ),
+            alignment: Alignment.center,
+            child: const AssetOr('assets/images/character.png', fallback: FittedBox(child: _GameArt('poker'))),
+          ),
+        ),
+        const SizedBox(height: 6),
+        _ActionPill(
+          emoji: '🛒',
+          title: 'المتجر',
+          subtitle: 'اشحن عملاتك الافتراضية',
+          onTap: () => _soon(context, 'المتجر'),
+        ),
+      ],
+    );
+  }
+}
+
+class _ActionPill extends StatelessWidget {
+  const _ActionPill({
+    required this.emoji,
+    required this.title,
+    required this.subtitle,
+    required this.onTap,
+  });
+  final String emoji;
+  final String title;
+  final String subtitle;
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    return Material(
+      color: Colors.transparent,
+      child: InkWell(
+        borderRadius: BorderRadius.circular(14),
+        onTap: onTap,
+        child: Ink(
+          padding: const EdgeInsets.all(8),
+          decoration: BoxDecoration(
+            color: panel,
+            borderRadius: BorderRadius.circular(14),
+            border: Border.all(color: gold.withValues(alpha: .6)),
+          ),
+          child: Row(
+            children: [
+              Text(emoji, style: const TextStyle(fontSize: 26)),
+              const SizedBox(width: 8),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(title,
+                        style: const TextStyle(
+                            color: gold,
+                            fontWeight: FontWeight.bold,
+                            fontSize: 13)),
+                    Text(subtitle,
+                        style: const TextStyle(
+                            color: Colors.white70, fontSize: 10)),
+                  ],
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+// ---------------- منطقة الألعاب ----------------
+class _GamesArea extends StatelessWidget {
+  const _GamesArea({this.columns = 3});
+  final int columns;
+
+  static const games = [
+    ['بوكر', 'poker', '1254', 0xFF17634E, 0xFF0E3B34],
+    ['الدومينو', 'domino', '893', 0xFF1E7A3E, 0xFF0F4A2A],
+    ['أوماها', 'omaha', '567', 0xFF1E7A3E, 0xFF0F4A2A],
+    ['تين باتي', 'tin', '742', 0xFF1B6C7A, 0xFF0D3345],
+    ['أقل أو أعلى من 7', 'dice', '621', 0xFF6C287E, 0xFF29133D],
+    ['ألعاب ورق متنوعة', 'misc', '438', 0xFF1F4E9A, 0xFF11264F],
+  ];
+
+  @override
+  Widget build(BuildContext context) {
+    final rows = games.length ~/ columns;
+    return Column(
+      children: [
+        const Padding(
+          padding: EdgeInsets.only(bottom: 6),
+          child: _Logo(),
+        ),
+        for (int r = 0; r < rows; r++) ...[
+          Expanded(child: _row(context, r * columns)),
+          if (r != rows - 1) const SizedBox(height: 8),
+        ],
+      ],
+    );
+  }
+
+  Widget _row(BuildContext context, int start) {
+    return Row(
+      children: [
+        for (int i = start; i < start + columns; i++) ...[
+          Expanded(
+            child: _GameCard(
+              name: games[i][0] as String,
+              kind: games[i][1] as String,
+              players: games[i][2] as String,
+              c1: Color(games[i][3] as int),
+              c2: Color(games[i][4] as int),
+              onTap: () => _openGame(context, games[i][0] as String),
+            ),
+          ),
+          if (i != start + columns - 1) const SizedBox(width: 8),
+        ],
+      ],
+    );
+  }
+}
+
+class _Logo extends StatelessWidget {
+  const _Logo();
+
+  @override
+  Widget build(BuildContext context) {
+    if (AssetOr.has('logo')) {
+      return const SizedBox(
+        height: 58,
+        child: AssetOr('assets/images/logo.webp', fallback: SizedBox()),
+      );
+    }
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 26, vertical: 5),
+      decoration: BoxDecoration(
+        gradient: const LinearGradient(
+          colors: [Color(0xFFD42B38), Color(0xFF7A1019)],
+          begin: Alignment.topCenter,
+          end: Alignment.bottomCenter,
+        ),
+        borderRadius: BorderRadius.circular(14),
+        border: Border.all(color: gold, width: 2.5),
+        boxShadow: [
+          BoxShadow(color: gold.withValues(alpha: .4), blurRadius: 16),
+        ],
+      ),
+      child: const Text(
+        '👑 طرابيزة بوكر',
+        style: TextStyle(
+          color: Colors.white,
+          fontSize: 20,
+          fontWeight: FontWeight.w900,
+          shadows: [Shadow(color: Colors.black87, blurRadius: 4, offset: Offset(0, 2))],
+        ),
+      ),
+    );
+  }
+}
+
+class _GameCard extends StatelessWidget {
+  const _GameCard({
+    required this.name,
+    required this.kind,
+    required this.players,
+    required this.c1,
+    required this.c2,
+    required this.onTap,
+  });
+  final String name;
+  final String kind;
+  final String players;
+  final Color c1;
+  final Color c2;
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    if (AssetOr.has('game_$kind')) {
+      return FittedBox(
+        fit: BoxFit.contain,
+        child: SizedBox(
+          width: 176,
+          height: 160,
+          child: Stack(
+            fit: StackFit.expand,
+            children: [
+              AssetOr('assets/images/game_$kind.webp',
+                  fit: BoxFit.fill, fallback: const SizedBox()),
+              Positioned.fill(
+                child: Material(
+                  color: Colors.transparent,
+                  child: InkWell(
+                    borderRadius: BorderRadius.circular(14),
+                    onTap: onTap,
+                  ),
+                ),
+              ),
+            ],
+          ),
+        ),
+      );
+    }
+    return Material(
+      color: Colors.transparent,
+      child: InkWell(
+        borderRadius: BorderRadius.circular(14),
+        onTap: onTap,
+        child: Ink(
+          decoration: BoxDecoration(
+            gradient: LinearGradient(
+              colors: [c1, c2],
+              begin: Alignment.topCenter,
+              end: Alignment.bottomCenter,
+            ),
+            borderRadius: BorderRadius.circular(14),
+            border: Border.all(color: gold, width: 1.5),
+            boxShadow: [
+              BoxShadow(color: gold.withValues(alpha: .25), blurRadius: 14),
+            ],
+          ),
+          child: ClipRRect(
+            borderRadius: BorderRadius.circular(13),
+            child: Stack(
+              fit: StackFit.expand,
+              children: [
+                const DecoratedBox(
+                  decoration: BoxDecoration(
+                    gradient: LinearGradient(
+                      begin: Alignment.topCenter,
+                      end: Alignment.center,
+                      colors: [Color(0x26FFFFFF), Color(0x00FFFFFF)],
+                    ),
+                  ),
+                ),
+                Column(
+                  mainAxisAlignment: MainAxisAlignment.center,
+                  children: [
+                    Expanded(
+                      child: Padding(
+                        padding: const EdgeInsets.fromLTRB(6, 8, 6, 2),
+                        child: AssetOr(
+                          'assets/images/game_$kind.png',
+                          fallback: FittedBox(child: _GameArt(kind)),
+                        ),
+                      ),
+                    ),
+                    Container(
+                      margin: const EdgeInsets.symmetric(horizontal: 8),
+                      padding: const EdgeInsets.symmetric(
+                          horizontal: 10, vertical: 3),
+                      decoration: BoxDecoration(
+                        gradient: const LinearGradient(
+                          colors: [Color(0xFFFFE08A), Color(0xFFD9962B)],
+                          begin: Alignment.topCenter,
+                          end: Alignment.bottomCenter,
+                        ),
+                        borderRadius: BorderRadius.circular(8),
+                        border: Border.all(color: const Color(0xFF8A5A12)),
+                        boxShadow: const [
+                          BoxShadow(color: Colors.black45, blurRadius: 3, offset: Offset(0, 2)),
+                        ],
+                      ),
+                      child: FittedBox(
+                        fit: BoxFit.scaleDown,
+                        child: Text(name,
+                            style: const TextStyle(
+                                color: Color(0xFF3A1F0A),
+                                fontWeight: FontWeight.w900,
+                                fontSize: 14)),
+                      ),
+                    ),
+                    const SizedBox(height: 4),
+                    Container(
+                      margin: const EdgeInsets.only(bottom: 6),
+                      padding: const EdgeInsets.symmetric(
+                          horizontal: 8, vertical: 2),
+                      decoration: BoxDecoration(
+                        color: Colors.black38,
+                        borderRadius: BorderRadius.circular(8),
+                      ),
+                      child: Text('👤 $players لاعب',
+                          style: const TextStyle(
+                              fontSize: 10, color: Colors.white70)),
+                    ),
+                  ],
+                ),
+              ],
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+// ---------------- بطاقة المكافأة ----------------
+class _RewardCard extends StatelessWidget {
+  @override
+  Widget build(BuildContext context) {
+    if (AssetOr.has('reward')) {
+      return GestureDetector(
+        onTap: () => _soon(context, 'المكافأة اليومية'),
+        child: const FittedBox(
+          fit: BoxFit.contain,
+          child: SizedBox(
+            width: 156,
+            height: 328,
+            child: AssetOr('assets/images/reward.webp',
+                fit: BoxFit.fill, fallback: SizedBox()),
+          ),
+        ),
+      );
+    }
+    return Container(
+      padding: const EdgeInsets.all(8),
+      decoration: BoxDecoration(
+        gradient: const LinearGradient(
+          colors: [Color(0xFF3A1A55), Color(0xFF1C0D2C)],
+          begin: Alignment.topCenter,
+          end: Alignment.bottomCenter,
+        ),
+        borderRadius: BorderRadius.ci
